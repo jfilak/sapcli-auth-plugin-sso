@@ -131,6 +131,34 @@ impl Drop for WinHttpHandle {
     }
 }
 
+
+/// Wraps CertNameToStrW with the X.500 format that matches win32crypt.CertNameToStr's default.
+unsafe fn cert_name_to_string(blob: &CRYPT_INTEGER_BLOB) -> Result<String> {
+    // First call with null buffer to get required size (in WCHARs, including NUL).
+    unsafe {
+        let needed = CertNameToStrW(
+            CERT_QUERY_ENCODING_TYPE(0x00010001), // X509_ASN_ENCODING | PKCS_7_ASN_ENCODING
+            blob as *const _,
+            CERT_X500_NAME_STR,
+            None,
+        );
+        if needed <= 1 {
+            return Ok(String::new());
+        }
+        let mut buf = vec![0u16; needed as usize];
+        let written = CertNameToStrW(
+            CERT_QUERY_ENCODING_TYPE(0x00010001),
+            blob as *const _,
+            CERT_X500_NAME_STR,
+            Some(&mut buf),
+        );
+        // Strip trailing NUL.
+        let len = (written as usize).saturating_sub(1);
+        Ok(String::from_utf16_lossy(&buf[..len]))
+    }
+}
+
+
 /// Open the personal ("MY") certificate store and locate a cert whose subject
 /// contains the given substring (case-insensitive, matches what certmgr shows).
 fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
@@ -152,49 +180,40 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
 
     let store = CertStore(store);
 
-    // CERT_FIND_SUBJECT_STR_W performs a case-insensitive substring match
-    // against the subject's CN — exactly the "display name" you see in certmgr.
-    let needle = wide(subject_substr);
-    let ctx = unsafe {
-        CertFindCertificateInStore(
-            store.0,
-            X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
-            0,
-            CERT_FIND_SUBJECT_STR_W,
-            Some(needle.as_ptr() as *const c_void),
-            None,
-        )
-    };
+    let mut ctx: *mut CERT_CONTEXT = ptr::null_mut();
+    if subject_substr.is_empty() {
+        ctx = unsafe {
+            CertEnumCertificatesInStore(store.0, Some(ctx))
+        } as *mut CERT_CONTEXT;
 
-    if ctx.is_null() {
-        bail!(
-            "No certificate in {} \\MY whose subject contains \"{}\"",
-            "CurrentUser", subject_substr
-        );
+        if ctx.is_null() {
+            bail!("No certificates found in {} \\MY", "CurrentUser");
+        }
+    } else {
+        // CERT_FIND_SUBJECT_STR_W performs a case-insensitive substring match
+        // against the subject's CN — exactly the "display name" you see in certmgr.
+        let needle = wide(subject_substr);
+        ctx = unsafe {
+            CertFindCertificateInStore(
+                store.0,
+                X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+                0,
+                CERT_FIND_SUBJECT_STR_W,
+                Some(needle.as_ptr() as *const c_void),
+                None,
+            )
+        };
+
+        if ctx.is_null() {
+            bail!(
+                "No certificate in {} \\MY whose subject contains \"{}\"",
+                "CurrentUser", subject_substr
+            );
+        }
     }
 
-    unsafe {
-        let info = &*(*ctx).pCertInfo;
-        let subject_blob = &info.Subject as *const _ as *mut _;
-
-        // First call with None to get required length
-        let len = CertNameToStrW(
-            X509_ASN_ENCODING,
-            subject_blob,
-            CERT_X500_NAME_STR,
-            None,
-        );
-        let mut buf = vec![0u16; len as usize];
-        CertNameToStrW(
-            X509_ASN_ENCODING,
-            subject_blob,
-            CERT_X500_NAME_STR,
-            Some(&mut buf),
-        );
-        // len includes the null terminator
-        let subject = String::from_utf16_lossy(&buf[..buf.len().saturating_sub(1)]);
-        eprintln!("matched cert subject: {subject:?}");
-    }
+    let found_subject = unsafe { cert_name_to_string(&(*ctx).pCertInfo.read().Subject) }?;
+    eprintln!("matched cert subject: {found_subject:?}");
 
     Ok((store, CertCtx(ctx)))
 }
