@@ -173,6 +173,29 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
         );
     }
 
+    unsafe {
+        let info = &*(*ctx).pCertInfo;
+        let subject_blob = &info.Subject as *const _ as *mut _;
+
+        // First call with None to get required length
+        let len = CertNameToStrW(
+            X509_ASN_ENCODING,
+            subject_blob,
+            CERT_X500_NAME_STR,
+            None,
+        );
+        let mut buf = vec![0u16; len as usize];
+        CertNameToStrW(
+            X509_ASN_ENCODING,
+            subject_blob,
+            CERT_X500_NAME_STR,
+            Some(&mut buf),
+        );
+        // len includes the null terminator
+        let subject = String::from_utf16_lossy(&buf[..buf.len().saturating_sub(1)]);
+        eprintln!("matched cert subject: {subject:?}");
+    }
+
     Ok((store, CertCtx(ctx)))
 }
 
@@ -219,7 +242,6 @@ fn winhttp_error_message(code: u32) -> String {
 
 fn get_cookies(client_subject: &str, client_url: &str, method: &str, verify_ssl: bool, auth: String) -> Result<Vec<String>> {
     // 1. Locate the cert.
-    #[allow(unused)]
     let (_store, cert) = find_cert(client_subject)?;
 
     // 2. Crack the URL into components.
@@ -313,24 +335,19 @@ fn get_cookies(client_subject: &str, client_url: &str, method: &str, verify_ssl:
     //
     // WinHTTP duplicates the CERT_CONTEXT internally, so it's safe to let our
     // RAII wrapper free the original when we return.
-/*
-    unsafe {
-        WinHttpSetOption(
-            Some(req.0),
-            WINHTTP_OPTION_CLIENT_CERT_CONTEXT,
-            Some(std::slice::from_raw_parts(
-                cert.0 as *const u8,
-                std::mem::size_of::<CERT_CONTEXT>(),
-            )),
+    let cert_ptr = cert.0 as *const c_void;
+    let cert_slice = unsafe {
+        std::slice::from_raw_parts(
+            cert_ptr as *const u8,
+            std::mem::size_of::<CERT_CONTEXT>(),
         )
-        .context("WinHttpSetOption(CLIENT_CERT_CONTEXT) failed")?;
-    }
-        */
+    }; 
+
     unsafe {
         WinHttpSetOption(
             Some(req.0),
             WINHTTP_OPTION_CLIENT_CERT_CONTEXT,
-            None
+            Some(cert_slice),
         )
         .context("WinHttpSetOption(CLIENT_CERT_CONTEXT) failed")?;
     }
@@ -477,8 +494,9 @@ async fn handle_request(request: SapcliPluginRequest) -> Result<SapcliCookiePlug
     };
 
     let auth = request.parameters.get("auth").cloned().unwrap_or_default();
+    let subject = request.parameters.get("cert_subject").cloned().unwrap_or_default();
 
-    let fetched_cookies = get_cookies("", &url, &method, request.connection.verify_ssl, auth)?;
+    let fetched_cookies = get_cookies(subject.deref(), &url, &method, request.connection.verify_ssl, auth)?;
 
     let format = time::format_description::parse(
         "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour \
