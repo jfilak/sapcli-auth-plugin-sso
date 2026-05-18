@@ -1,0 +1,15 @@
+[package]
+name = "sap_http_session_initializer_windows"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.13.3", default-features = false, features = ["native-tls", "json", "cookies"] }
+serde_json = { version = "1", features = ["default"] }
+serde = { version = "1", features = ["default", "derive"] }
+chrono = { version = "0", features = ["std", "serde"]}
+
+[[bin]]
+name = "sap-http-session-initializer"
+path = "src/main.rs"
