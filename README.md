@@ -1,0 +1,37 @@
+# sapcli authentication plugin for Client Certificate SSO on Windows
+
+This project ships an utility that makes a dummy HTTP request
+over WinHTTP using Client Certififcate from user's certificate
+store to establish a session with an ABAP system and then dump
+the HTTP session cookies into starndard outout so
+[sapcli](https://github.com/jfilak/sapcli) can use it communicate
+over HTTP without the need to authenticate.
+
+The trick is in using WinHTTP so the required certificate does not need
+to be exported from the Windows Certificate Store.
+
+## Usage
+
+Update your `~/.sapcli/config.yml`
+
+```yaml
+connections:
+  corporate-server:
+    ashost: cool-dev-abap.example.org
+    client: '100'
+    port: 50001
+    ssl: true
+    sysnr: 00
+
+users:
+  sso-user:
+    auth_plugin:
+      command: C:\<absolute path>\sap-http-session-initializer.exe
+
+contexts:
+  corporate-sso:
+    user: sso-user
+    connection: corporate-server
+
+current-context: corporate-sso
+```
