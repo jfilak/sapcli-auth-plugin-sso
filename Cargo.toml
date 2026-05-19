@@ -1,7 +1,8 @@
 [package]
 name = "sap_http_session_initializer_windows"
-version = "0.0.0"
+version = "0.0.1"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -23,6 +24,9 @@ windows = { version = "0.62", features = [
 }
 time = { version = "0.3", features = [ "std" ] }
 cookie = { version = "0.18", features = [ "percent-encode" ] }
+
+[build-dependencies]
+vergen-gitcl = { version = "9", features = ["build", "cargo"] }
 
 [[bin]]
 name = "sap-http-session-initializer"

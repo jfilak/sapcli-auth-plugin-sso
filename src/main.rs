@@ -6,6 +6,10 @@
 // SChannel does the TLS handshake using the key in place.
 #![cfg(windows)]
 
+const GIT_HASH: &str = env!("VERGEN_GIT_SHA");
+const GIT_BRANCH: &str = env!("VERGEN_GIT_BRANCH");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use std::ptr;
 use std::io::Read;
 use std::ffi::c_void;
@@ -661,6 +665,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 println!("Found certificate with subject: {}", subject);    
 
+                return Ok(());
+            }
+
+            "version" => {
+                println!("Version: {}", VERSION);
+                println!("Git branch: {}", GIT_BRANCH);
+                println!("Git hash: {}", GIT_HASH);
                 return Ok(());
             }
 
