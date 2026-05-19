@@ -16,6 +16,7 @@ use std::ffi::c_void;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::env;
+use std::sync::OnceLock;
 
 use serde_json;
 use serde::{Serialize, Deserialize};
@@ -43,6 +44,8 @@ const ENCODING: CERT_QUERY_ENCODING_TYPE =
 
 const NAME_STR_TYPE: u32 = CERT_X500_NAME_STR.0;
 const NAME_STR_FLAG: u32 = CERT_NAME_STR_REVERSE_FLAG;
+
+static VERBOSE: OnceLock<bool> = OnceLock::new();
 
 #[derive(Deserialize)]
 struct SapcliPluginConnection {
@@ -142,9 +145,47 @@ impl Drop for WinHttpHandle {
     }
 }
 
+fn dump_blob(label: &str, blob: &CRYPT_INTEGER_BLOB) {
+    if !*VERBOSE.get().unwrap_or(&false) {
+        return;
+    }
+
+    let len = blob.cbData as usize;
+    println!("{label} ({len} bytes)");
+
+    if len == 0 || blob.pbData.is_null() {
+        println!("  <empty>");
+        return;
+    }
+
+    let bytes = unsafe { std::slice::from_raw_parts(blob.pbData, len) };
+
+    for (i, chunk) in bytes.chunks(16).enumerate() {
+        let offset = i * 16;
+
+        // Hex column, padded to 16 bytes wide even on the last short chunk
+        let mut hex = String::with_capacity(16 * 3);
+        for b in chunk {
+            hex.push_str(&format!("{b:02x} "));
+        }
+        for _ in chunk.len()..16 {
+            hex.push_str("   ");
+        }
+
+        // ASCII column — printable ASCII only, '.' for everything else
+        let ascii: String = chunk
+            .iter()
+            .map(|&b| if (0x20..0x7f).contains(&b) { b as char } else { '.' })
+            .collect();
+
+        println!("  {offset:04x}  {hex} {ascii}");
+    }
+}
 
 /// Wraps CertNameToStrW with the X.500 format that matches win32crypt.CertNameToStr's default.
 unsafe fn cert_name_to_string(blob: &CRYPT_INTEGER_BLOB) -> Result<String> {
+    dump_blob("cert from store", &blob);
+
     // First call with null buffer to get required size (in WCHARs, including NUL).
     unsafe {
         let needed = CertNameToStrW(
@@ -277,6 +318,7 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
             pbData: buf.as_ptr() as *mut u8,
         };
 
+        dump_blob("lookup name", &name_blob);
         ctx = unsafe {
             CertFindCertificateInStore(
                 store.0,
@@ -646,6 +688,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {
+
+        VERBOSE.set(args.iter().any(|arg| arg == "--verbose")).unwrap_or_else(|_| ());
+
         match args[1].as_str() {
             "list-my-certs" => {
                 list_certificates()?;
