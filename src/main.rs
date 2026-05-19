@@ -243,6 +243,25 @@ fn print_cert_subjects(store: CertStore) -> Result<(), Box<dyn std::error::Error
             return Ok(());
         }
 
+        if VERBOSE.get().copied().unwrap_or(false) {
+            let subj = &unsafe { &*(&*ctx).pCertInfo }.Subject;
+            let blob = CRYPT_INTEGER_BLOB {
+                cbData: subj.cbData,
+                pbData: subj.pbData,
+            };
+            let found = unsafe {
+                CertFindCertificateInStore(
+                    store.0,
+                    ENCODING,
+                    0,
+                    CERT_FIND_SUBJECT_NAME,
+                    Some(&blob as *const _ as _),
+                    None)
+            };
+            println!("Self-lookup for debugging: {}", if found.is_null() { "FAILED" } else { "succeeded" });
+            assert!(!found.is_null(), "self-lookup must succeed");
+        }
+
         let subject = unsafe {
             cert_name_to_string(&(*ctx).pCertInfo.read().Subject)?
         };

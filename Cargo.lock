@@ -782,7 +782,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "sap_http_session_initializer_windows"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "anyhow",
  "chrono",
