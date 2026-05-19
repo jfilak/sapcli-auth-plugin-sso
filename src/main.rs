@@ -11,6 +11,7 @@ use std::io::Read;
 use std::ffi::c_void;
 use std::collections::HashMap;
 use std::ops::Deref;
+use std::env;
 
 use serde_json;
 use serde::{Serialize, Deserialize};
@@ -159,9 +160,7 @@ unsafe fn cert_name_to_string(blob: &CRYPT_INTEGER_BLOB) -> Result<String> {
 }
 
 
-/// Open the personal ("MY") certificate store and locate a cert whose subject
-/// contains the given substring (case-insensitive, matches what certmgr shows).
-fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
+fn open_cert_store() -> Result<CertStore> {
     let store_flags = CERT_SYSTEM_STORE_CURRENT_USER_ID;
 
     let store_name = wide("MY");
@@ -179,6 +178,33 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
     .context("CertOpenStore(MY) failed")?;
 
     let store = CertStore(store);
+
+    Ok(store)
+}
+
+fn print_cert_subjects(store CertStore) {
+    let mut ctx: *mut CERT_CONTEXT = ptr::null_mut();
+    loop {
+        ctx = unsafe {
+            CertEnumCertificatesInStore(store.0, Some(ctx))
+        } as *mut CERT_CONTEXT;
+
+        if ctx.is_null() {
+            break;
+        }
+
+        let subject = unsafe { cert_name_to_string(&(*ctx).pCertInfo.read().Subject) }?;
+        println!("{}", subject)
+    }
+}
+
+
+
+/// Open the personal ("MY") certificate store and locate a cert whose subject
+/// contains the given substring (case-insensitive, matches what certmgr shows).
+fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
+
+    let store = open_cert_store()?;
 
     let mut ctx: *mut CERT_CONTEXT = ptr::null_mut();
     if subject_substr.is_empty() {
@@ -559,6 +585,18 @@ async fn handle_request(request: SapcliPluginRequest) -> Result<SapcliCookiePlug
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+
+    if (args.len() > 1) {
+        if args[1] != "list-my-certs" {
+            Err("Unsupported arguments: {}", format!("{:?}", args))
+        }
+
+        list_certificates()
+        Ok(())
+    }
+
+
     // Read the request from stdin
     let mut buffer = String::new();
     std::io::stdin().read_to_string(&mut buffer)?;
