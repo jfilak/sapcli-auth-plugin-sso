@@ -287,7 +287,7 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
     let store = open_cert_store()?;
 
     let mut ctx: *mut CERT_CONTEXT = ptr::null_mut();
-    if subject_substr.is_empty() {
+    loop {
         ctx = unsafe {
             CertEnumCertificatesInStore(store.0, Some(ctx))
         } as *mut CERT_CONTEXT;
@@ -295,73 +295,16 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
         if ctx.is_null() {
             bail!("No certificates found in {} \\MY", "CurrentUser");
         }
-    } else {
-        // CERT_FIND_SUBJECT_STR_W performs a case-insensitive substring match
-        // against the subject's CN — exactly the "display name" you see in certmgr.
-        let needle = wide(subject_substr);
-        let mut encoded: u32 = 0;
-        unsafe {
-            CertStrToNameW(
-                ENCODING,
-                PCWSTR(needle.as_ptr()),
-            windows::Win32::Security::Cryptography::CERT_STRING_TYPE(NAME_STR_TYPE | NAME_STR_FLAG),
-                None,
-                None,
-                &mut encoded,
-                None,
-            )
-        }.context("CertFromStringToName failed")?;
 
-        if encoded < 1 {
-            bail!("CertFromStringToName failed to encode subject substring");
-        }
-
-        let mut buf = vec![0u8; encoded as usize];
-
-        unsafe {
-            CertStrToNameW(
-               ENCODING,
-                PCWSTR(needle.as_ptr()),
-            windows::Win32::Security::Cryptography::CERT_STRING_TYPE(NAME_STR_TYPE | NAME_STR_FLAG),
-                None,
-                Some(buf.as_ptr() as *mut u8),
-                &mut encoded,
-                None,
-            )
-        }.context("CertFromStringToName failed to encode subject substring")?;
-
-        buf.truncate(encoded as usize);
-
-        let name_blob: CRYPT_INTEGER_BLOB = CRYPT_INTEGER_BLOB  {
-            cbData: encoded,
-            pbData: buf.as_ptr() as *mut u8,
+        let subject = unsafe {
+            cert_name_to_string(&(*ctx).pCertInfo.read().Subject)?
         };
 
-        dump_blob("lookup name", &name_blob);
-        ctx = unsafe {
-            CertFindCertificateInStore(
-                store.0,
-                ENCODING,
-                0,
-                CERT_FIND_SUBJECT_NAME,
-                Some(&name_blob as *const _ as *const _ ),
-                None,
-            )
-        };
-
-        if ctx.is_null() {
-            let err = unsafe { windows::Win32::Foundation::GetLastError() };
-            eprintln!("CertFindCertificateInStore failed: 0x{:08x}", err.0);
-            bail!(
-                "No certificate in {} \\MY whose subject contains \"{}\"",
-                "CurrentUser", subject_substr
-            );
+        if subject.to_lowercase().eq(&subject_substr.to_lowercase()) {
+            eprintln!("Found matching certificate with subject: {}", subject);
+            break;
         }
     }
-
-    let found_subject = unsafe { cert_name_to_string(&(*ctx).pCertInfo.read().Subject) }?;
-    eprintln!("matched cert subject: {found_subject:?}");
-
     Ok((store, CertCtx(ctx)))
 }
 
