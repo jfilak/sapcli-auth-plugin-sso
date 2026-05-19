@@ -34,6 +34,12 @@ use windows::Win32::System::Diagnostics::Debug::{
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, LoadLibraryW};
 use windows::core::{w, PWSTR};
 
+const ENCODING: CERT_QUERY_ENCODING_TYPE =
+    CERT_QUERY_ENCODING_TYPE(X509_ASN_ENCODING.0 | PKCS_7_ASN_ENCODING.0);
+
+const NAME_STR_TYPE: u32 = CERT_X500_NAME_STR.0;
+const NAME_STR_FLAG: u32 = CERT_NAME_STR_REVERSE_FLAG;
+
 #[derive(Deserialize)]
 struct SapcliPluginConnection {
     proto: String,
@@ -138,9 +144,9 @@ unsafe fn cert_name_to_string(blob: &CRYPT_INTEGER_BLOB) -> Result<String> {
     // First call with null buffer to get required size (in WCHARs, including NUL).
     unsafe {
         let needed = CertNameToStrW(
-            CERT_QUERY_ENCODING_TYPE(0x00010001), // X509_ASN_ENCODING | PKCS_7_ASN_ENCODING
+            ENCODING,
             blob as *const _,
-            CERT_X500_NAME_STR,
+            windows::Win32::Security::Cryptography::CERT_STRING_TYPE(NAME_STR_TYPE | NAME_STR_FLAG),
             None,
         );
         if needed <= 1 {
@@ -148,9 +154,9 @@ unsafe fn cert_name_to_string(blob: &CRYPT_INTEGER_BLOB) -> Result<String> {
         }
         let mut buf = vec![0u16; needed as usize];
         let written = CertNameToStrW(
-            CERT_QUERY_ENCODING_TYPE(0x00010001),
+            ENCODING,
             blob as *const _,
-            CERT_X500_NAME_STR,
+            windows::Win32::Security::Cryptography::CERT_STRING_TYPE(NAME_STR_TYPE | NAME_STR_FLAG),
             Some(&mut buf),
         );
         // Strip trailing NUL.
@@ -158,7 +164,6 @@ unsafe fn cert_name_to_string(blob: &CRYPT_INTEGER_BLOB) -> Result<String> {
         Ok(String::from_utf16_lossy(&buf[..len]))
     }
 }
-
 
 fn open_cert_store() -> Result<CertStore> {
     let store_flags = CERT_SYSTEM_STORE_CURRENT_USER_ID;
@@ -233,7 +238,7 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
         let mut encoded: u32 = 0;
         unsafe {
             CertStrToNameW(
-                X509_ASN_ENCODING,
+                ENCODING,
                 PCWSTR(needle.as_ptr()),
                 CERT_X500_NAME_STR,
                 None,
@@ -251,29 +256,30 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
 
         unsafe {
             CertStrToNameW(
-                X509_ASN_ENCODING,
+               ENCODING,
                 PCWSTR(needle.as_ptr()),
                 CERT_X500_NAME_STR,
                 None,
-                Some(&mut buf[0]),
+                Some(buf.as_ptr() as *mut u8),
                 &mut encoded,
                 None,
             )
         }.context("CertFromStringToName failed to encode subject substring")?;
 
-        let name_blob: CRYPT_BIT_BLOB = CRYPT_BIT_BLOB {
+        buf.truncate(encoded as usize);
+
+        let name_blob: CRYPT_INTEGER_BLOB = CRYPT_INTEGER_BLOB  {
             cbData: encoded,
             pbData: buf.as_ptr() as *mut u8,
-            cUnusedBits: 0,
         };
 
         ctx = unsafe {
             CertFindCertificateInStore(
                 store.0,
-                X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
+                ENCODING,
                 0,
                 CERT_FIND_SUBJECT_NAME,
-                Some(&name_blob as *const CRYPT_BIT_BLOB  as *const c_void),
+                Some(&name_blob as *const _ as *const _ ),
                 None,
             )
         };
