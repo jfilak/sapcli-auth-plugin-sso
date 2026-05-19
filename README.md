@@ -43,3 +43,53 @@ contexts:
 
 current-context: corporate-sso
 ```
+
+## Troubleshooting
+
+If you open `certmgr.msc` you can see more certificates in
+the folder Personal. Then you must specify the one which
+should be used because `sap-htt-session-initializer` picks
+the first one by default.
+
+You can achieve that by specifying the certificates Subject
+in `~/.sapcli/config.yml`.
+
+```yaml
+users:
+  sso-user:
+    auth_plugin:
+      command: C:\<absolute path>\sap-http-session-initializer.exe
+      parameters:
+        cert_subject: <put the needed certificates name here>
+```
+
+First you should check your certificates:
+
+```bash
+sap-http-session-initializer.exe list-my-certs
+```
+
+The command shoud list the certificates in the format
+that is used by the plugin to do the search.
+
+```
+CN=jakub@thefilaks.net, O=tinkers
+CN=filak.jakub@gmail.net, O=talkers
+```
+
+Verify the choosen subject can be selected:
+
+```bash
+sap-http-session-initializer.exe find-my-certs "CN=filak.jakub@gmail.net, O=talkers"
+```
+
+Finally put it into the config file:
+
+```yaml
+users:
+  sso-user:
+    auth_plugin:
+      command: C:\<absolute path>\sap-http-session-initializer.exe
+      parameters:
+        cert_subject: "CN=filak.jakub@gmail.net, O=talkers"
+```
