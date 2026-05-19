@@ -230,13 +230,50 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
         // CERT_FIND_SUBJECT_STR_W performs a case-insensitive substring match
         // against the subject's CN — exactly the "display name" you see in certmgr.
         let needle = wide(subject_substr);
+        let mut encoded: u32 = 0;
+        unsafe {
+            CertStrToNameW(
+                X509_ASN_ENCODING,
+                PCWSTR(needle.as_ptr()),
+                CERT_X500_NAME_STR,
+                None,
+                None,
+                &mut encoded,
+                None,
+            )
+        }.context("CertFromStringToName failed")?;
+
+        if encoded < 1 {
+            bail!("CertFromStringToName failed to encode subject substring");
+        }
+
+        let mut buf = vec![0u8; encoded as usize];
+
+        unsafe {
+            CertStrToNameW(
+                X509_ASN_ENCODING,
+                PCWSTR(needle.as_ptr()),
+                CERT_X500_NAME_STR,
+                None,
+                Some(&mut buf[0]),
+                &mut encoded,
+                None,
+            )
+        }.context("CertFromStringToName failed to encode subject substring")?;
+
+        let name_blob: CRYPT_BIT_BLOB = CRYPT_BIT_BLOB {
+            cbData: encoded,
+            pbData: buf.as_ptr() as *mut u8,
+            cUnusedBits: 0,
+        };
+
         ctx = unsafe {
             CertFindCertificateInStore(
                 store.0,
                 X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
                 0,
-                CERT_FIND_SUBJECT_STR_W,
-                Some(needle.as_ptr() as *const c_void),
+                CERT_FIND_SUBJECT_NAME,
+                Some(&name_blob as *const CRYPT_BIT_BLOB  as *const c_void),
                 None,
             )
         };
@@ -599,13 +636,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {
-        if args[1] != "list-my-certs" {
-            eprintln!("Unsupported argument: {}", args[1]);
-            eprintln!("Usage: {} [list-my-certs]", args[0]);
-            return Ok(());
-        }
+        match args[1].as_str() {
+            "list-my-certs" => {
+                list_certificates()?;
+                return Ok(());
+            }
 
-        list_certificates()?;
+            "find-my-certs" => {
+                if args.len() < 3 {
+                    eprintln!("Usage: {} find-my-certs <subject_substring>", args[0]);
+                    return Ok(());
+                }
+
+                let (_store, cert) = find_cert(&args[2])?;
+                let subject = unsafe {
+                    cert_name_to_string(&(*cert.0).pCertInfo.read().Subject)?
+                };
+
+                println!("Found certificate with subject: {}", subject);    
+
+                return Ok(());
+            }
+
+            _ => {
+                eprintln!("Unsupported argument: {}", args[1]);
+            }
+        }
+    
+        eprintln!("Usage: {} [list-my-certs] [find-my-certs <subject_substring>]", args[0]);
         return Ok(());
     }
 
