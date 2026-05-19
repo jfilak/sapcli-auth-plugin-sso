@@ -10,6 +10,14 @@ over HTTP without the need to authenticate.
 The trick is in using WinHTTP so the required certificate does not need
 to be exported from the Windows Certificate Store.
 
+## Installation
+
+Download the binary `sap-http-session-initializer.exe` from [Releases](https://github.com/jfilak/sapcli-auth-plugin-sso/releases).
+
+Make sure the binary `sap-http-session-initializer.exe` is not in
+a temporary directory and remember its absolute path which you need
+for configuration of `auth_plugin` in sapcli's config file.
+
 ## Usage
 
 Update your `~/.sapcli/config.yml`
