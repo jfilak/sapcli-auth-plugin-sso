@@ -285,7 +285,7 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
             CertStrToNameW(
                 ENCODING,
                 PCWSTR(needle.as_ptr()),
-                CERT_X500_NAME_STR,
+            windows::Win32::Security::Cryptography::CERT_STRING_TYPE(NAME_STR_TYPE | NAME_STR_FLAG),
                 None,
                 None,
                 &mut encoded,
@@ -303,7 +303,7 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
             CertStrToNameW(
                ENCODING,
                 PCWSTR(needle.as_ptr()),
-                CERT_X500_NAME_STR,
+            windows::Win32::Security::Cryptography::CERT_STRING_TYPE(NAME_STR_TYPE | NAME_STR_FLAG),
                 None,
                 Some(buf.as_ptr() as *mut u8),
                 &mut encoded,
@@ -331,6 +331,8 @@ fn find_cert(subject_substr: &str) -> Result<(CertStore, CertCtx)> {
         };
 
         if ctx.is_null() {
+            let err = unsafe { windows::Win32::Foundation::GetLastError() };
+            eprintln!("CertFindCertificateInStore failed: 0x{:08x}", err.0);
             bail!(
                 "No certificate in {} \\MY whose subject contains \"{}\"",
                 "CurrentUser", subject_substr
