@@ -1,0 +1,31 @@
+name: Build Windows Executable and Upload to Release
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+
+      - name: Build Windows executable
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Upload executable to release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: target/x86_64-pc-windows-msvc/release/sap-http-session-initializer.exe
+          asset_name: sap-http-session-initializer.exe
+          asset_content_type: application/octet-stream

@@ -8,11 +8,11 @@ the HTTP session cookies into starndard outout so
 over HTTP without the need to authenticate.
 
 The trick is in using WinHTTP so the required certificate does not need
-to be exported from the Windows Certificate Store.
+ to be exported from the Windows Certificate Store.
 
 ## Installation
 
-Download the binary `sap-http-session-initializer.exe` from [Releases](https://github.com/jfilak/sapcli-auth-plugin-sso/releases).
+Download the binary `sap-http-session-initializer.exe` from [Releases](https://github.com/jfilak/sapcli-auth-plugin-sso/releases). The Windows executable is automatically built and uploaded to releases using a GitHub workflow.
 
 Make sure the binary `sap-http-session-initializer.exe` is not in
 a temporary directory and remember its absolute path which you need
